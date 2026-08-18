@@ -1,47 +1,51 @@
 # syntax=docker/dockerfile:1
 
-# ============================================================================
-# Telegram Bot API
-# ============================================================================
-FROM aiogram/telegram-bot-api:latest AS tgapi
-
-# ============================================================================
-# Основной образ бота
-# ============================================================================
 FROM python:3.12-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# ============================================================================
 # Системные зависимости
+# ============================================================================
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     curl \
     ca-certificates \
-    libstdc++6 \
-    libgcc-s1 \
-    libc6 \
-    openssl \
+    git \
+    cmake \
+    g++ \
+    make \
+    pkg-config \
+    libssl-dev \
+    zlib1g-dev \
+    gperf \
+    file \
     && rm -rf /var/lib/apt/lists/*
 
 # ============================================================================
 # Telegram Bot API
 # ============================================================================
 
-COPY --from=tgapi /usr/local/bin/telegram-bot-api /usr/local/bin/telegram-bot-api
+WORKDIR /tmp
 
-RUN chmod +x /usr/local/bin/telegram-bot-api
+RUN git clone --recursive --depth 1 \
+    https://github.com/tdlib/telegram-bot-api.git
 
-# Проверяем бинарник во время сборки
-RUN echo "=== Telegram Bot API binary ===" && \
-    ls -lah /usr/local/bin/telegram-bot-api && \
+WORKDIR /tmp/telegram-bot-api
+
+RUN mkdir build && \
+    cd build && \
+    cmake -DCMAKE_BUILD_TYPE=Release .. && \
+    cmake --build . --target telegram-bot-api -j2 && \
+    cp telegram-bot-api /usr/local/bin/telegram-bot-api
+
+RUN chmod +x /usr/local/bin/telegram-bot-api && \
     file /usr/local/bin/telegram-bot-api && \
-    echo "=== Dynamic libraries ===" && \
-    ldd /usr/local/bin/telegram-bot-api || true && \
-    echo "=== Architecture ===" && \
-    uname -m
+    /usr/local/bin/telegram-bot-api --version
 
 # ============================================================================
-# Приложение
+# Python-бот
 # ============================================================================
 
 WORKDIR /app
@@ -53,23 +57,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # ============================================================================
-# Local Bot API storage
+# Local Telegram Bot API
 # ============================================================================
 
 ENV LOCAL_BOT_API_DATA_PATH=/var/lib/telegram-bot-api
-
-RUN mkdir -p /var/lib/telegram-bot-api
-
-# ============================================================================
-# Local Bot API URL
-# ============================================================================
-
 ENV LOCAL_BOT_API_URL=http://127.0.0.1:8081
 
-# ============================================================================
-# Entrypoint
-# ============================================================================
+RUN mkdir -p /var/lib/telegram-bot-api && \
+    chmod +x /app/entrypoint.sh
 
-RUN chmod +x /app/entrypoint.sh
+# ============================================================================
+# Запуск
+# ============================================================================
 
 ENTRYPOINT ["/app/entrypoint.sh"]
