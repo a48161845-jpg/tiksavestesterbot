@@ -42,7 +42,6 @@ _FFMPEG_PATH: Optional[str] = _find_ffmpeg()
 
 def _probe_sync(url: str) -> Dict[str, Any]:
     opts = {
-        "js_runtimes": {"deno": {}},
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
@@ -85,7 +84,6 @@ async def download_youtube(
             fmt = f"best[ext=mp4][height<={max_height}]/best[height<={max_height}]/best"
 
         opts = {
-            "js_runtimes": {"deno": {}},
             "format": fmt,
             "outtmpl": out_template,
             "noplaylist": True,
@@ -104,7 +102,7 @@ async def download_youtube(
             # Для прогрессивных (не фрагментированных) файлов — параллельные
             # HTTP Range-запросы одним потоком curl-стайл через встроенный
             # нативный загрузчик yt-dlp.
-
+            "http_chunk_size": 10 * 1024 * 1024,
             "fragment_retries": 5,
             "retry_sleep_functions": {"http": lambda n: min(1 + n, 5)},
         }
@@ -180,7 +178,6 @@ async def download_audio_only(url: str, out_dir: Path) -> Path:
     def _run() -> Path:
         out_template = str(out_dir / "%(id)s.audio.%(ext)s")
         opts = {
-            "js_runtimes": {"deno": {}},
             "format": "bestaudio/best",
             "outtmpl": out_template,
             "noplaylist": True,
@@ -190,7 +187,7 @@ async def download_audio_only(url: str, out_dir: Path) -> Path:
             "socket_timeout": 20,
             "retries": 3,
             "concurrent_fragment_downloads": 8,
-
+            "http_chunk_size": 10 * 1024 * 1024,
         }
         if _FFMPEG_PATH:
             opts["ffmpeg_location"] = _FFMPEG_PATH
