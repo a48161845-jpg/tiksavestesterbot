@@ -7,6 +7,7 @@
 (asyncio.to_thread), чтобы не блокировать event loop бота.
 """
 import asyncio
+import os
 import shutil
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -39,6 +40,29 @@ def _find_ffmpeg() -> Optional[str]:
 
 _FFMPEG_PATH: Optional[str] = _find_ffmpeg()
 
+# С начала 2026 YouTube резко усилил анти-бот защиту: без явного указания
+# "клиента" плеера yt-dlp то ловит 403 на скачивании, то отдаёт кривой/
+# неполный список форматов (отсюда качества, которых на видео на самом деле
+# нет). android/tv/web в таком порядке — по опыту сообщества yt-dlp сейчас
+# самые стабильные комбинации, mweb — доп. фолбэк.
+_PLAYER_CLIENTS = [c.strip() for c in os.getenv(
+    "YT_DLP_PLAYER_CLIENTS", "android,tv,web,mweb"
+).split(",") if c.strip()]
+
+# Необязательный путь к файлу с cookies (формат Netscape, как экспортирует
+# расширение "Get cookies.txt") — если задан, сильно снижает шанс 403 на
+# возрастных/залогиненных видео. Указывается через .env: YT_DLP_COOKIES_FILE.
+_COOKIES_FILE = os.getenv("YT_DLP_COOKIES_FILE", "").strip()
+
+
+def _common_opts() -> Dict[str, Any]:
+    opts: Dict[str, Any] = {
+        "extractor_args": {"youtube": {"player_client": _PLAYER_CLIENTS}},
+    }
+    if _COOKIES_FILE and Path(_COOKIES_FILE).exists():
+        opts["cookiefile"] = _COOKIES_FILE
+    return opts
+
 
 def _probe_sync(url: str) -> Dict[str, Any]:
     opts = {
@@ -47,6 +71,7 @@ def _probe_sync(url: str) -> Dict[str, Any]:
         "noplaylist": True,
         "skip_download": True,
         "socket_timeout": 20,
+        **_common_opts(),
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
@@ -92,6 +117,7 @@ async def download_youtube(
             "nocheckcertificate": True,
             "socket_timeout": 20,
             "retries": 3,
+            **_common_opts(),
             # ===== Ускорение скачивания =====
             # YouTube (и большинство других площадок через yt-dlp) отдают
             # видео фрагментами (DASH/HLS) — по умолчанию yt-dlp качает их
@@ -140,6 +166,11 @@ def list_available_heights(info: Dict[str, Any]) -> list:
     for f in info.get("formats") or []:
         h = f.get("height")
         vcodec = f.get("vcodec")
+        # has_drm/помечен "Premium" — формат в списке ЕСТЬ, но реально
+        # скачать его нельзя (нужна подписка/логин), из-за чего пикер
+        # предлагал качество, которого "на самом деле нет". Пропускаем такие.
+        if f.get("has_drm"):
+            continue
         if h and vcodec and vcodec != "none":
             heights.add(int(h))
     if not heights:
@@ -188,6 +219,7 @@ async def download_audio_only(url: str, out_dir: Path) -> Path:
             "retries": 3,
             "concurrent_fragment_downloads": 8,
             "http_chunk_size": 10 * 1024 * 1024,
+            **_common_opts(),
         }
         if _FFMPEG_PATH:
             opts["ffmpeg_location"] = _FFMPEG_PATH

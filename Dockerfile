@@ -50,8 +50,16 @@ FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg \
         curl \
+        unzip \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# YouTube с начала 2026 требует решать JS-челленджи при выдаче ссылок на
+# формат — без установленного JS-раннера yt-dlp либо не может расшифровать
+# сигнатуру (получаем 403), либо отдаёт неполный/некорректный список
+# форматов. Deno — самый стабильно поддерживаемый вариант у yt-dlp сейчас.
+RUN curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh -s -- -y \
+    && chmod +x /usr/local/bin/deno
 
 COPY --from=tgapi-builder /tgapi-out/bin/telegram-bot-api /usr/local/bin/telegram-bot-api
 RUN chmod +x /usr/local/bin/telegram-bot-api
