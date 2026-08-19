@@ -124,11 +124,16 @@ async def download_youtube(
             # строго по одному. concurrent_fragment_downloads тянет сразу
             # несколько фрагментов параллельно, что на нормальном канале
             # даёт кратный прирост скорости, особенно на HD/FHD видео.
-            "concurrent_fragment_downloads": 8,
-            # Для прогрессивных (не фрагментированных) файлов — параллельные
-            # HTTP Range-запросы одним потоком curl-стайл через встроенный
-            # нативный загрузчик yt-dlp.
-            "http_chunk_size": 10 * 1024 * 1024,
+            #
+            # ВАЖНО: http_chunk_size сюда специально НЕ добавляем — вместе с
+            # concurrent_fragment_downloads это ломает скачивание с ошибкой
+            # "Conflicting range" на форматах, которые отдаются одним URL
+            # через псевдо-фрагментацию по Range-заголовкам (именно так и
+            # было: несколько параллельных потоков путались в расчёте
+            # диапазонов при ретраях). concurrent_fragment_downloads сам по
+            # себе безопасен и работает для настоящих multi-URL фрагментов
+            # (DASH/HLS) — именно на них и даёт прирост скорости.
+            "concurrent_fragment_downloads": 4,
             "fragment_retries": 5,
             "retry_sleep_functions": {"http": lambda n: min(1 + n, 5)},
         }
@@ -217,8 +222,7 @@ async def download_audio_only(url: str, out_dir: Path) -> Path:
             "nocheckcertificate": True,
             "socket_timeout": 20,
             "retries": 3,
-            "concurrent_fragment_downloads": 8,
-            "http_chunk_size": 10 * 1024 * 1024,
+            "concurrent_fragment_downloads": 4,
             **_common_opts(),
         }
         if _FFMPEG_PATH:
